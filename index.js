@@ -1,21 +1,17 @@
-const express = require("express");
 const axios = require("axios");
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Helper: extract shortcode from URL
-function extractShortcode(url) {
-  const match = url.match(/\/p\/([^/?#]+)/);
-  return match ? match[1] : null;
-}
-
-app.get("/download", async (req, res) => {
+module.exports = async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ success: false, error: "Missing ?url query" });
 
-  const shortcode = extractShortcode(url);
-  if (!shortcode) return res.status(400).json({ success: false, error: "Invalid Instagram URL" });
+  // Remove query params
+  const cleanUrl = url.split("?")[0];
+
+  // Match p, reel, or tv shortcode
+  const match = cleanUrl.match(/\/(p|reel|tv)\/([^\/]+)/);
+  if (!match) return res.status(400).json({ success: false, error: "Invalid Instagram URL" });
+
+  const shortcode = match[2];
 
   try {
     const graphURL = `https://www.instagram.com/graphql/query/?doc_id=8845758582119845&variables={"shortcode":"${shortcode}"}`;
@@ -28,22 +24,17 @@ app.get("/download", async (req, res) => {
       },
     });
 
-    const data = response.data?.data?.xdt_shortcode_media;
-    if (!data) return res.status(404).json({ success: false, error: "Media not found" });
+    const media = response.data?.data?.xdt_shortcode_media;
+    if (!media) return res.status(404).json({ success: false, error: "Media not found" });
 
-    // Extract structured info
-    const structured = {
+    res.json({
       success: true,
-      author: "ItachiXD",
+      author: "MinatoCode",
       platform: "instagram",
-      url: data.video_url || data.display_url || null,
-    };
-
-    res.json(structured);
+      url: media.video_url || media.display_url || null,
+    });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ success: false, error: "Failed to fetch data" });
+    res.status(500).json({ success: false, error: "Failed to fetch Instagram media" });
   }
-});
-
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+};
