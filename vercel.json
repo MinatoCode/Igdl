@@ -8,7 +8,7 @@
   ],
   "routes": [
     {
-      "src": "/download",
+      "src": "/api/igdl",
       "dest": "/index.js"
     }
   ]
