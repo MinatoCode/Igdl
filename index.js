@@ -55,8 +55,8 @@ module.exports = async function handler(req, res) {
         raw: data,
       });
 
-    res.json({ success: true, video: finalUrl });
+    res.json({ success: true, author: "MinatoCode", video: finalUrl });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, author: "MinatoCode", error: err.message });
   }
 };
