@@ -1,76 +1,62 @@
 const axios = require("axios");
 
-module.exports = async (req, res) => {
-  const { url } = req.query || req.body || {};
+const COOKIES = "_ga-GA1.1=902018491.1763389124; gads=ID-56591f1daa06286e:T-1763825837:S=ALNI_MYXVbjpVynhn7KFC5S9N83RdzclAg; gp-UID-000011b7baab14c6:T-1763826837:S=ALNI_MYuWrVmQITFRNyxZzwEqgKBiCWASQ; _eoi=ID=5f5ed2c0e2d78cf2:T-1763826837:S=AA-Afjb803XH1WulbuEqKw1Cynwu; FCCDCF=[null,null,null,null,null,null,[[32,\"[\\\"99554747-5dea-4d96-8f14-fe3849740d85\\\",1763389126,373000000]\"]]]; FCNEC=[[\"AKsRol_SRpbhll1fPyXmL1LY35la3cwpVy2MeejAnSy/SEZSKKLIVZKm0tx45ny2zcs0gLgLAG43uzQWtr1wqH2XMgTf0JXziAc82zEYE5lByhneHblUyT1ITRp82FtoHNaQSUbr.JiKaTpFoeL1jnXe1140Al2-uw==\"]]; ga_5C2FBJKJSV-GS2.1.517638268365035=15117638271948/14510Sh0";
 
-  if (!url)
-    return res.status(400).json({ success: false, error: "Missing Instagram URL" });
-
+module.exports = async function handler(req, res) {
   try {
-    // Extract shortcode dynamically
-    const match = url.match(/(?:reel|p)\/([a-zA-Z0-9_-]+)/);
-    if (!match)
-      return res.status(400).json({ success: false, error: "Invalid Instagram URL" });
+    const url = req.query.url;
 
-    const shortcode = match[1];
+    if (!url)
+      return res.status(400).json({ success: false, error: "No URL provided." });
 
-    // Generate a fresh GraphQL URL every time
-    const variables = { shortcode };
-    const doc_id = 8845758582119845; // stable GraphQL ID for media
-    const graphURL = `https://www.instagram.com/graphql/query/?doc_id=${doc_id}&variables=${encodeURIComponent(
-      JSON.stringify(variables)
-    )}&_=${Date.now()}`; // add timestamp to bypass caching
+    const reelId = url.match(/\/reel\/([^/?]+)/)?.[1];
+    let igsh = url.match(/igsh=([^&]+)/)?.[1];
 
-    // Make request with fresh headers
-    let response = await axios.get(graphURL, {
+    // If igsh is missing or empty, set it to '/'
+    if (!igsh) igsh = "/";
+
+    if (!reelId)
+      return res.status(400).json({ success: false, error: "Invalid reel URL." });
+
+    const endpoint = `https://reelsvideo.io/reel/${reelId}/?igsh=${igsh}/`;
+
+    const form = new URLSearchParams({
+      id: url,
+      locale: "en",
+      tt: "668d1309bdcfaa6c847ff4f5a0b6cf9a",
+      ts: Math.floor(Date.now() / 1000),
+    });
+
+    const response = await axios.post(endpoint, form.toString(), {
       headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:119.0) Gecko/20100101 Firefox/119.0",
-        "Accept": "application/json",
-        "X-IG-App-ID": "936619743392459",
-        Referer: "https://www.instagram.com/",
+          "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Mobile Safari",
+        "X-Requested-With": "XMLHttpRequest",
+        "Accept-Language": "en-US,en;q=0.9",
+        Cookie: COOKIES,
       },
     });
 
-    let mediaData = response?.data?.data?.xdt_shortcode_media;
+    const data = response.data;
 
-    if (!mediaData) {
-      // fallback to oEmbed
-      const oembed = await axios.get(
-        `https://www.instagram.com/oembed/?url=${encodeURIComponent(url)}`
-      );
-      if (!oembed.data)
-        throw new Error("Both GraphQL and oEmbed failed to fetch media");
+    // Extract all ssscdn.io URLs
+    const allUrls = JSON.stringify(data).match(/https:\/\/ssscdn\.io\/reelsvideo\/[^\s"']+/g) || [];
 
-      return res.json({
-        success: true,
-        author: "MinatoCode",
-        platform: "instagram",
-        media_author: oembed.data.author_name,
-        url: oembed.data.thumbnail_url,
-        caption: oembed.data.title || "",
+    // Filter URLs that do NOT have /a/ or /p/ immediately after reelsvideo/
+    const mainUrls = allUrls.filter(u => !/^https:\/\/ssscdn\.io\/reelsvideo\/[ap]\//.test(u));
+
+    const finalUrl = mainUrls[0] || null;
+
+    if (!finalUrl)
+      return res.status(500).json({
+        success: false,
+        error: "Failed to extract main video URL (without /a/ or /p/).",
+        raw: data,
       });
-    }
 
-    const author =
-      mediaData.owner?.username || mediaData.owner?.full_name || "Unknown";
-
-    const mediaUrl =
-      mediaData.video_url ||
-      mediaData.display_url ||
-      mediaData.edge_sidecar_to_children?.edges?.[0]?.node?.video_url ||
-      mediaData.edge_sidecar_to_children?.edges?.[0]?.node?.display_url ||
-      null;
-
-    res.json({
-      success: true,
-      author: "MinatoCode",
-      platform: "instagram",
-      media_author: author,
-      url: mediaUrl,
-    });
+    res.json({ success: true, video: finalUrl });
   } catch (err) {
-    console.error(err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 };
